@@ -27,12 +27,14 @@ class Attendance(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"))
     date = Column(String)
     status = Column(String)
-    timestamp = Column(String) # New: Tracks exact time of action
+    timestamp = Column(String) # Tracks exact time of action
     employee = relationship("Employee", back_populates="attendance_records")
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+# Allow Frontend to talk to Backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -54,15 +56,29 @@ class AttendanceCreate(BaseModel):
 
 # --- ENDPOINTS ---
 
+@app.get("/")
+def read_root():
+    return {"message": "HRMS Lite (Python) is Running!"}
+
 @app.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
-    # 1. Counts
+    # 1. Total Count
     total_employees = db.query(Employee).count()
-    today = datetime.now().strftime("%Y-%m-%d")
-    present_today = db.query(Attendance).filter(Attendance.date == today, Attendance.status == "Present").count()
-    absent_today = db.query(Attendance).filter(Attendance.date == today, Attendance.status == "Absent").count()
+    
+    # 2. Smart Date Logic (Fixes Timezone Bug)
+    # We find the date of the most recent attendance record.
+    # This ensures the dashboard matches the user's activity, regardless of server timezone.
+    latest_record = db.query(Attendance).order_by(desc(Attendance.id)).first()
+    
+    if latest_record:
+        target_date = latest_record.date
+    else:
+        target_date = datetime.now().strftime("%Y-%m-%d")
+    
+    present_count = db.query(Attendance).filter(Attendance.date == target_date, Attendance.status == "Present").count()
+    absent_count = db.query(Attendance).filter(Attendance.date == target_date, Attendance.status == "Absent").count()
 
-    # 2. Recent Activity (Last 5 actions)
+    # 3. Recent Activity (Last 5 actions)
     recent_activity = db.query(Attendance).order_by(desc(Attendance.id)).limit(5).all()
     activity_log = []
     for act in recent_activity:
@@ -74,7 +90,7 @@ def get_stats(db: Session = Depends(get_db)):
                 "time": act.timestamp or "Just now"
             })
 
-    # 3. Department Distribution
+    # 4. Department Distribution
     depts = db.query(Employee.department).all()
     dept_counts = {}
     for d in depts:
@@ -82,8 +98,8 @@ def get_stats(db: Session = Depends(get_db)):
     
     return {
         "total_employees": total_employees,
-        "present_today": present_today,
-        "absent_today": absent_today,
+        "present_today": present_count,
+        "absent_today": absent_count,
         "recent_activity": activity_log,
         "department_stats": [{"name": k, "count": v} for k, v in dept_counts.items()]
     }
@@ -108,13 +124,13 @@ def delete_employee(id: int, db: Session = Depends(get_db)):
 
 @app.post("/attendance")
 def mark_attendance(att: AttendanceCreate, db: Session = Depends(get_db)):
-    # Fix: Ensure date matching is exact
+    # Check if already marked for this date
     existing = db.query(Attendance).filter(Attendance.employee_id == att.employee_id, Attendance.date == att.date).first()
     now_time = datetime.now().strftime("%H:%M")
     
     if existing:
-        existing.status = att.status # type: ignore
-        existing.timestamp = now_time # type: ignore
+        existing.status = att.status
+        existing.timestamp = now_time
     else:
         new_att = Attendance(employee_id=att.employee_id, date=att.date, status=att.status, timestamp=now_time)
         db.add(new_att)
