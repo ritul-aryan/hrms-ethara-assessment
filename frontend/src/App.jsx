@@ -22,7 +22,7 @@ export default function App() {
   // Toast State
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
 
-  const API_URL = "http://127.0.0.1:8000"; 
+  const API_URL = "https://hrms-backend-crtf.onrender.com"; 
 
   useEffect(() => { fetchData(); }, []);
 
