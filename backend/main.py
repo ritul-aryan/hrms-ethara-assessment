@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- DATABASE SETUP ---
 SQLALCHEMY_DATABASE_URL = "sqlite:///./hrms.db"
@@ -16,6 +16,7 @@ Base = declarative_base()
 class Employee(Base):
     __tablename__ = "employees"
     id = Column(Integer, primary_key=True, index=True)
+    emp_code = Column(String, unique=True, index=True)
     name = Column(String, index=True)
     email = Column(String, unique=True, index=True)
     department = Column(String)
@@ -27,7 +28,7 @@ class Attendance(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"))
     date = Column(String)
     status = Column(String)
-    timestamp = Column(String) # Tracks exact time of action
+    timestamp = Column(String) 
     employee = relationship("Employee", back_populates="attendance_records")
 
 Base.metadata.create_all(bind=engine)
@@ -48,8 +49,8 @@ def get_db():
     try: yield db
     finally: db.close()
 
-class EmployeeCreate(BaseModel):
-    name: str; email: str; department: str
+class EmployeeSchema(BaseModel):
+    emp_code: str; name: str; email: str; department: str
 
 class AttendanceCreate(BaseModel):
     employee_id: int; date: str; status: str
@@ -58,39 +59,56 @@ class AttendanceCreate(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "HRMS Lite (Python) is Running!"}
+    return {"message": "HRMS Pro V4 (Gold) is Running!"}
+
+@app.post("/seed")
+def seed_data(db: Session = Depends(get_db)):
+    if db.query(Employee).count() > 0:
+        return {"msg": "Database already has data"}
+    
+    employees = [
+        Employee(emp_code="EMP001", name="Ritul Aryan", email="ritul@ethara.ai", department="Engineering"),
+        Employee(emp_code="EMP002", name="Shruti Bansal", email="shruti@ethara.ai", department="HR"),
+        Employee(emp_code="EMP003", name="Rahul Sharma", email="rahul@ethara.ai", department="Sales"),
+        Employee(emp_code="EMP004", name="Parna Ray", email="parna@krmu.edu.in", department="Management")
+    ]
+    db.add_all(employees)
+    db.commit()
+
+    # Fake History (Last 3 Days)
+    db_employees = db.query(Employee).all()
+    today = datetime.now()
+    for emp in db_employees:
+        for i in range(3):
+            past_date = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+            status = "Present"
+            # Randomize absent for demo
+            if emp.department == "Sales" and i == 1: status = "Absent"
+            db.add(Attendance(employee_id=emp.id, date=past_date, status=status, timestamp="09:00"))
+    db.commit()
+    return {"msg": "Demo Data Restored!"}
 
 @app.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
-    # 1. Total Count
     total_employees = db.query(Employee).count()
+    today = datetime.now().strftime("%Y-%m-%d")
     
-    # 2. Smart Date Logic (Fixes Timezone Bug)
-    # We find the date of the most recent attendance record.
-    # This ensures the dashboard matches the user's activity, regardless of server timezone.
-    latest_record = db.query(Attendance).order_by(desc(Attendance.id)).first()
-    
-    if latest_record:
-        target_date = latest_record.date
-    else:
-        target_date = datetime.now().strftime("%Y-%m-%d")
-    
-    present_count = db.query(Attendance).filter(Attendance.date == target_date, Attendance.status == "Present").count()
-    absent_count = db.query(Attendance).filter(Attendance.date == target_date, Attendance.status == "Absent").count()
+    present_today = db.query(Attendance).filter(Attendance.date == today, Attendance.status == "Present").count()
+    absent_today = db.query(Attendance).filter(Attendance.date == today, Attendance.status == "Absent").count()
 
-    # 3. Recent Activity (Last 5 actions)
-    recent_activity = db.query(Attendance).order_by(desc(Attendance.id)).limit(5).all()
+    recent_activity = db.query(Attendance).order_by(desc(Attendance.id)).limit(50).all()
     activity_log = []
     for act in recent_activity:
         emp = db.query(Employee).filter(Employee.id == act.employee_id).first()
         if emp:
             activity_log.append({
                 "name": emp.name,
+                "department": emp.department,
                 "status": act.status,
-                "time": act.timestamp or "Just now"
+                "time": act.timestamp,
+                "date": act.date
             })
 
-    # 4. Department Distribution
     depts = db.query(Employee.department).all()
     dept_counts = {}
     for d in depts:
@@ -98,23 +116,61 @@ def get_stats(db: Session = Depends(get_db)):
     
     return {
         "total_employees": total_employees,
-        "present_today": present_count,
-        "absent_today": absent_count,
+        "present_today": present_today,
+        "absent_today": absent_today,
         "recent_activity": activity_log,
         "department_stats": [{"name": k, "count": v} for k, v in dept_counts.items()]
     }
 
 @app.get("/employees")
 def get_employees(db: Session = Depends(get_db)):
-    return db.query(Employee).order_by(desc(Employee.id)).all()
+    employees = db.query(Employee).order_by(desc(Employee.id)).all()
+    result = []
+    for emp in employees:
+        total_present = db.query(Attendance).filter(Attendance.employee_id == emp.id, Attendance.status == "Present").count()
+        total_days = db.query(Attendance).filter(Attendance.employee_id == emp.id).count()
+        rate = int((total_present / total_days) * 100) if total_days > 0 else 0
+            
+        result.append({
+            "id": emp.id,
+            "emp_code": emp.emp_code,
+            "name": emp.name,
+            "email": emp.email,
+            "department": emp.department,
+            "attendance_rate": rate,
+            "total_present": total_present
+        })
+    return result
 
 @app.post("/employees")
-def create_employee(emp: EmployeeCreate, db: Session = Depends(get_db)):
+def create_employee(emp: EmployeeSchema, db: Session = Depends(get_db)):
     if db.query(Employee).filter(Employee.email == emp.email).first():
         raise HTTPException(status_code=400, detail="Email exists")
-    new_emp = Employee(name=emp.name, email=emp.email, department=emp.department)
+    if db.query(Employee).filter(Employee.emp_code == emp.emp_code).first():
+        raise HTTPException(status_code=400, detail="Employee ID exists")
+    new_emp = Employee(emp_code=emp.emp_code, name=emp.name, email=emp.email, department=emp.department)
     db.add(new_emp); db.commit(); db.refresh(new_emp)
     return new_emp
+
+# --- REAL EDIT ENDPOINT (PUT) ---
+@app.put("/employees/{id}")
+def update_employee(id: int, emp_update: EmployeeSchema, db: Session = Depends(get_db)):
+    emp = db.query(Employee).filter(Employee.id == id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    # Check duplicates only if email changes
+    if emp.email != emp_update.email and db.query(Employee).filter(Employee.email == emp_update.email).first():
+        raise HTTPException(status_code=400, detail="Email already taken")
+    
+    emp.name = emp_update.name
+    emp.email = emp_update.email
+    emp.department = emp_update.department
+    emp.emp_code = emp_update.emp_code
+    
+    db.commit()
+    db.refresh(emp)
+    return emp
 
 @app.delete("/employees/{id}")
 def delete_employee(id: int, db: Session = Depends(get_db)):
@@ -124,10 +180,8 @@ def delete_employee(id: int, db: Session = Depends(get_db)):
 
 @app.post("/attendance")
 def mark_attendance(att: AttendanceCreate, db: Session = Depends(get_db)):
-    # Check if already marked for this date
     existing = db.query(Attendance).filter(Attendance.employee_id == att.employee_id, Attendance.date == att.date).first()
     now_time = datetime.now().strftime("%H:%M")
-    
     if existing:
         existing.status = att.status
         existing.timestamp = now_time
