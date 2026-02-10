@@ -1,4 +1,4 @@
-# HRMS Pro | Ethara.AI Assessment
+# HRMS Lite | Ethara.AI Assessment
 
 A Full-Stack Human Resource Management System built for the Ethara.AI LLM Intern Assessment.
 This application allows administrators to manage employee records, track daily attendance, and visualize workforce statistics in real-time.
