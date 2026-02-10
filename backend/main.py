@@ -59,7 +59,7 @@ class AttendanceCreate(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "HRMS Pro V4 (Gold) is Running!"}
+    return {"message": "HRMS Lite is Running!"}
 
 @app.post("/seed")
 def seed_data(db: Session = Depends(get_db)):
