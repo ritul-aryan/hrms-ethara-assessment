@@ -201,7 +201,7 @@ export default function App() {
                   <div className="flex items-center gap-4">
                      <div className="bg-blue-500/20 p-3 rounded-full"><RefreshCw className="text-blue-400 animate-spin-slow" size={24}/></div>
                      <div>
-                        <h3 className="font-bold text-white">Welcome to HRMS Pro!</h3>
+                        <h3 className="font-bold text-white">Welcome to HRMS Lite!</h3>
                         <p className="text-slate-400 text-sm">The database is currently empty. Restore demo data to see the magic.</p>
                      </div>
                   </div>
