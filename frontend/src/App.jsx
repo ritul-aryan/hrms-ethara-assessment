@@ -160,7 +160,7 @@ export default function App() {
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-950 border-r border-slate-800 transform transition-transform duration-300 md:relative md:translate-x-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} pt-16 md:pt-0 shadow-xl flex flex-col`}>
         <div className="hidden md:flex p-6 items-center gap-3 h-20">
           <img src="/logo.png" className="w-8 h-8" alt="Logo"/>
-          <h1 className="text-xl font-bold tracking-wider text-white">HRMS<span className="text-blue-500">Pro</span></h1>
+          <h1 className="text-xl font-bold tracking-wider text-white">HRMS<span className="text-blue-500">Lite</span></h1>
         </div>
         <nav className="px-4 space-y-2 mt-4 flex-1">
           <NavButton icon={<LayoutDashboard size={20} />} label="Dashboard" active={view === "dashboard"} onClick={() => {setView("dashboard"); setIsMobileMenuOpen(false);}} />
